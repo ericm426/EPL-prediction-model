@@ -1,5 +1,6 @@
-# English Premier League Football Match Predictor
+# Football Match Predictor
 
-A machine learning project built to predict English Premier League Fixtures using data from the past 5 seasons.
+A ML model built to predict results of English Premier League fixtures using data from past 5 seasons.
 
-Data from football-data.org. restful api
+Data from https://www.football-data.co.uk/ and https://www.football-data.org/.
+

@@ -1,3 +1,5 @@
+# defunct, can use but i'm taking csvs now 
+
 import requests
 import os
 import time
@@ -12,14 +14,25 @@ API_KEY = os.getenv("API_KEY")
 
 def main():
     headers = { 'X-Auth-Token': API_KEY}
+    try:
+        season = input("What season do u want (enter in the year start date so i don't have to code more pls): ")
+        url = (f"https://api.football-data.org/v4/competitions/PL/matches?season={season}")
+        response = requests.get(url, headers=headers)
 
-    season = input("What season do u want (enter in the year start date so i don't have to code more pls): ")
-    url = (f"https://api.football-data.org/v4/competitions/PL/matches?season={season}")
-    response = requests.get(url, headers=headers)
-    print(response.json())
+        r = response.json()
+        
 
-    dataframe = clean_match_data(response.json()['matches'])
-    dataframe.to_csv(f'data/pl_matches_{season}-{int(season) + 1}.csv', index=False)
+        dataframe = clean_match_data(response.json()['matches'])
+        dataframe.to_csv(f'data/pl_matches_{season}-{int(season) + 1}.csv', index=False)
+        print("Success")
+
+
+    except Exception as e:
+        print(f"Error: {e}")
+        print(f"Message: {r.get('message', 'N/A')}\nError Code: {r.get('errorCode', r.get('error', 'N/A'))}")
+
+    
+    
 
 
 
