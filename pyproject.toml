@@ -1,9 +1,9 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "football match predictor"
+name = "football-match-predictor-2.0"
 version = "0.1.0"
 description = "A ML model built to predict results of English Premier League fixtures using data from past 5 seasons."
 requires-python = ">=3.11"
