@@ -1,4 +1,5 @@
 import pandas as pd 
+import numpy as np
 
 ### KEY ### 
 # ht = home team
@@ -6,152 +7,72 @@ import pandas as pd
 # gs = goals scored
 # gc = goals conceded
 
-# average goals scored in the past 5 matches
-def avg_goals_scored(team, date, df):
-    result = df[(df["date"] < date) & ((df["home_team"] == team) | (df["away_team"] == team))].tail(5)
-    
-    # edge case 
-    if result.empty:
-        return 0
+# data shape into single df
+def build_team_view(df):
+    home_view = df[["date", "home_team", "home_goals", "away_goals", "result"]].rename(columns={
+        "home_team": "team",
+        "home_goals":"gs",
+        "away_goals":"gc"
+    })
 
-    home_goals = result[result["home_team"] == team]["home_goals"].sum()
-    away_goals = result[result["away_team"] == team]["away_goals"].sum()
+    away_view = df[["date", "away_team", "away_goals", "home_goals", "result"]].rename(columns={
+        "away_team": "team",
+        "away_goals": "gs",
+        "home_goals": "gc"
+    })
+    home_view["venue"] = "home"
+    away_view["venue"] = "away" 
 
-    goals_scored = home_goals + away_goals
+    team_view = pd.concat([home_view, away_view])
 
-    # if not 5 matches, however many are available
-    avg = goals_scored / len(result)
-    return avg
-    
+    return team_view
 
+# rolling average of gs and gc
+def build_rolling_stats(df):
+    df = df.sort_values(by="date").reset_index(drop=True)
 
-# average goals conceded in the past 5 matches
-def avg_goals_conceded(team, date, df):
-    result = df[(df["date"] < date) & ((df["home_team"] == team) | (df["away_team"] == team))].tail(5)
-    
-    # edge case 
-    if result.empty:
-        return 0
+    win_con = ((df["venue"] == "home") & (df["result"] == "HOME_TEAM")) | ((df["venue"] == "away") & (df["result"] == "AWAY_TEAM"))
+    draw = df["result"] == "DRAW"
+    df["points"] = np.select([win_con, draw], [3, 1], default=0)
 
-    home_goals = result[result["home_team"] == team]["away_goals"].sum()
-    away_goals = result[result["away_team"] == team]["home_goals"].sum()
+    df["avg_gs"] = df.groupby("team")["gs"].transform(lambda x: x.shift(1).rolling(5).mean())
+    df["avg_gc"] = df.groupby("team")["gc"].transform(lambda x: x.shift(1).rolling(5).mean())
+    df["overall_form"] = df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(5).sum())
 
-    goals_conceded = home_goals + away_goals
-    
-    # if not 5 matches, however many are available
-    avg = goals_conceded / len(result)
-    return avg
+    home_df = df[df["venue"] == "home"].copy()
+    home_df["home_form"] = home_df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(5).sum())
 
-# Form in the last 5 matches
-def calculate_form(team, date, df):
-    matches = df[(df["date"] < date) & ((df["home_team"] == team) | (df["away_team"] == team))].tail(5)
-    form = 0
+    away_df = df[df["venue"] == "away"].copy()
+    away_df["away_form"] = away_df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(5).sum())
 
-    if matches.empty:
-        return (0)
-    
-    result_value = {
-        "win": 3, 
-        "draw": 1,
-        "loss": 0
-    }
+    df = df.merge(home_df[["date", "team", "home_form"]], on=["date", "team"], how="left")
+    df = df.merge(away_df[["date", "team", "away_form"]], on=["date", "team"], how="left")
 
-    for index, rows in matches.iterrows():
-        if rows["home_team"] == team:
-            if rows["result"] == "HOME_TEAM":
-                outcome = "win"
-            elif rows["result"] == "AWAY_TEAM":
-                outcome = "loss"
-            else:
-                outcome = "draw"
-        else:
-            if rows["result"] == "AWAY_TEAM":
-                outcome = "win"
-            elif rows["result"] == "HOME_TEAM":
-                outcome = "loss"
-            else:
-                outcome = "draw"
+    df = df.sort_values(["team", "date"])
+    df["home_form"] = df.groupby("team")["home_form"].ffill()
+    df["away_form"] = df.groupby("team")["away_form"].ffill()
 
-        form += result_value[outcome]
+    return df
 
-    return form    
-    
-# home form in last 5
-def home_form(team, date, df):
-    matches = df[(df["date"] < date) & (df["home_team"] == team)].tail(5)
-    form = 0
-
-    if matches.empty:
-        return (0)
-    
-    result_value = {
-        "win": 3, 
-        "draw": 1,
-        "loss": 0
-    }
-
-    for index, rows in matches.iterrows():
-        if rows["result"] == "HOME_TEAM":
-            outcome = "win"
-        elif rows["result"] == "AWAY_TEAM":
-            outcome = "loss"
-        else:
-            outcome = "draw"
-
-        form += result_value[outcome]
-
-    return form    
-
-def away_form(team, date, df):
-    matches = df[(df["date"] < date) & (df["away_team"] == team)].tail(5)
-    form = 0
-
-    if matches.empty:
-        return (0)
-    
-    result_value = {
-        "win": 3, 
-        "draw": 1,
-        "loss": 0
-    }
-
-    for index, rows in matches.iterrows():
-        if rows["result"] == "HOME_TEAM":
-            outcome = "loss"
-        elif rows["result"] == "AWAY_TEAM":
-            outcome = "win"
-        else:
-            outcome = "draw"
-
-        form += result_value[outcome]
-
-    return form    
-
-# feature functions -> new df for the model
+# feature functions -> df for the model
 def build_features(df):
-    data = []
+    stat_cols = ["date", "team", "avg_gs", "avg_gc", "overall_form", "home_form", "away_form"]
+    df_tomerge = build_rolling_stats(build_team_view(df))[stat_cols]
 
-    for index, row, in df.iterrows():
-        home_team = row["home_team"]
-        away_team = row["away_team"]
-        date = row["date"]
+    df = df.merge(df_tomerge, left_on=["date", "home_team"], right_on=["date", "team"]).rename(columns={
+        "avg_gs": "ht_avg_gs",
+        "avg_gc": "ht_avg_gc",
+        "overall_form": "ht_overall_form",
+        "home_form": "ht_home_form",
+        "away_form": "ht_away_form"
+    }).drop(columns=["team"])
 
-        features = {
-            "date": date,
-            "home_team": home_team,
-            "away_team": away_team,
-            "ht_avg_gs": avg_goals_scored(home_team, date, df),
-            "at_avg_gs": avg_goals_scored(away_team, date, df),
-            "ht_avg_gc": avg_goals_conceded(home_team, date, df),
-            "at_avg_gc": avg_goals_conceded(away_team, date, df),
-            "ht_home_form": home_form(home_team, date, df),
-            "at_away_form": away_form(away_team, date, df),
-            "ht_overall_form": calculate_form(home_team, date, df),
-            "at_overall_form": calculate_form(away_team, date, df),
-            "result": row["result"]
-        }
+    df = df.merge(df_tomerge, left_on=["date", "away_team"], right_on=["date", "team"]).rename(columns={
+        "avg_gs": "at_avg_gs",
+        "avg_gc": "at_avg_gc",
+        "overall_form": "at_overall_form",
+        "home_form": "at_home_form",
+        "away_form": "at_away_form"
+    }).drop(columns=["team"])
 
-        data.append(features)
-        
-
-    return pd.DataFrame(data)
+    return df

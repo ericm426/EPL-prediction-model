@@ -7,15 +7,17 @@ from match_predictor.features import build_features
 FEATURE_COLS = [
     "ht_avg_gs", "at_avg_gs", 
     "ht_avg_gc", "at_avg_gc",
-    "ht_home_form", "at_away_form",
-    "ht_overall_form", "at_overall_form",
+    "ht_home_form", "ht_away_form",
+    "ht_overall_form", "at_away_form",
+    "at_overall_form", "at_home_form"
 ]
 
 TARGET = "result" 
 
 # train the model 
 def train(df):
-    features_df = build_features(df).sort_values(by='date') # sort by date to prevent leakage
+    features_df = build_features(df).sort_values(by='date')
+    features_df[FEATURE_COLS] = features_df[FEATURE_COLS].fillna(0)
     split_index = int(len(features_df) * 0.8) 
     train = features_df.iloc[:split_index ]
     test = features_df.iloc[split_index:]
@@ -31,6 +33,7 @@ def train(df):
 
     y_pred = clf.predict(x_test)
     accuracy = accuracy_score(y_test, y_pred)
+    print(features_df.isnull().sum())
 
     return clf, accuracy
 
