@@ -28,7 +28,7 @@ def train(df):
     x_test = test[FEATURE_COLS]
     y_test = test[TARGET]
 
-    clf = RandomForestClassifier(n_estimators=100, random_state=1)
+    clf = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=1)
     clf.fit(x_train, y_train) 
 
     y_pred = clf.predict(x_test)

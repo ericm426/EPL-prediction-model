@@ -31,12 +31,18 @@ def build_team_view(df):
 def build_rolling_stats(df):
     df = df.sort_values(by="date").reset_index(drop=True)
 
+    # np conditions
     win_con = ((df["venue"] == "home") & (df["result"] == "HOME_TEAM")) | ((df["venue"] == "away") & (df["result"] == "AWAY_TEAM"))
     draw = df["result"] == "DRAW"
+
+    # add points
     df["points"] = np.select([win_con, draw], [3, 1], default=0)
 
+    # calc 5 game goal avg
     df["avg_gs"] = df.groupby("team")["gs"].transform(lambda x: x.shift(1).rolling(5).mean())
     df["avg_gc"] = df.groupby("team")["gc"].transform(lambda x: x.shift(1).rolling(5).mean())
+    
+    # form
     df["overall_form"] = df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(5).sum())
 
     home_df = df[df["venue"] == "home"].copy()
