@@ -20,14 +20,15 @@ FEATURE_COLS = [
     "at_avg_corners", "at_avg_corners_against",
     "ht_avg_xg", "ht_avg_xg_against",
     "at_avg_xg", "at_avg_xg_against",
+    "ht_elo", "at_elo",
 ]
 
 TARGET = "result"
 
 
-def train(df):
+def train(df, elo_k=35, elo_home_adv=125):
     le = LabelEncoder()
-    features_df = build_features(df).sort_values(by='date')
+    features_df = build_features(df, elo_k=elo_k, elo_home_adv=elo_home_adv).sort_values(by='date')
 
     split_index = int(len(features_df) * 0.8)
     train_df = features_df.iloc[:split_index].copy()
@@ -51,9 +52,9 @@ def train(df):
     xgb_proba = xgb.predict_proba(x_test)
     xgb_pred = xgb_proba.argmax(axis=1)
 
-    evaluate("XGBoost", y_test, xgb_pred, le)
+    acc = evaluate("XGBoost", y_test, xgb_pred, le)
 
-    return xgb
+    return xgb, acc
 
 
 def predict(model, match_features):

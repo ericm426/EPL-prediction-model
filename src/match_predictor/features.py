@@ -94,8 +94,45 @@ def build_rolling_stats(df):
 
     return df
 
+def compute_elo(df, k=35, home_advantage=125, initial=1500):
+    # pre-match ratings are recorded before updating, so there's no data leakage
+    df = df.sort_values("date").reset_index(drop=True)
+    ratings = {}
+    ht_elo, at_elo = [], []
+
+    for _, row in df.iterrows():
+        ht, at = row["home_team"], row["away_team"]
+        r_h = ratings.get(ht, initial)
+        r_a = ratings.get(at, initial)
+
+        ht_elo.append(r_h)
+        at_elo.append(r_a)
+
+        # home_advantage shifts expected probability in favour of the home side
+        e_h = 1 / (1 + 10 ** ((r_a - (r_h + home_advantage)) / 400))
+        e_a = 1 - e_h
+
+        # actual scores: win=1, draw=0.5, loss=0
+        if row["result"] == "HOME_TEAM":
+            s_h, s_a = 1.0, 0.0
+        elif row["result"] == "AWAY_TEAM":
+            s_h, s_a = 0.0, 1.0
+        else:
+            s_h, s_a = 0.5, 0.5
+
+        # k controls how much a single result shifts the rating
+        ratings[ht] = r_h + k * (s_h - e_h)
+        ratings[at] = r_a + k * (s_a - e_a)
+
+    df["ht_elo"] = ht_elo
+    df["at_elo"] = at_elo
+    return df
+
+
 # feature functions -> df for the model
-def build_features(df):
+def build_features(df, elo_k=35, elo_home_adv=125):
+    df = compute_elo(df, k=elo_k, home_advantage=elo_home_adv)
+
     stat_cols = ["date", "team", "avg_gs", "avg_gc", "form_3", "overall_form", "form_10", "avg_sot", "avg_sot_against", "avg_corners", "avg_corners_against", "avg_xg", "avg_xg_against", "draw_rate", "home_form", "away_form"]
     df_tomerge = build_rolling_stats(build_team_view(df))[stat_cols]
 
