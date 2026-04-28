@@ -14,7 +14,9 @@ dependencies = [
     "pandas>=2.0",
     "matplotlib>=3.8",
     "requests",
-    "python-dotenv"
+    "python-dotenv",
+    "xgboost",
+    "scipy"
 ]
 
 [project.optional-dependencies]

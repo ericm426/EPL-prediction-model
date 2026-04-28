@@ -8,9 +8,7 @@ def load_data():
 
 def main():
     data = load_data()
-    model, accuracy = train(data)
-
-    print(f"Model trained\nAccuracy: {accuracy}")
+    xgboost = train(data)
 
 
 if __name__ == "__main__": 
