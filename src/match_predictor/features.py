@@ -9,7 +9,7 @@ import numpy as np
 
 # data shape into single df
 def build_team_view(df):
-    home_view = df[["date", "home_team", "home_goals", "away_goals", "home_shots", "away_shots", "home_shots_ot", "away_shots_ot", "home_corners", "away_corners", "result"]].rename(columns={
+    home_view = df[["date", "home_team", "home_goals", "away_goals", "home_shots", "away_shots", "home_shots_ot", "away_shots_ot", "home_corners", "away_corners", "home_xg", "away_xg", "result"]].rename(columns={
         "home_team": "team",
         "home_goals":"gs",
         "away_goals":"gc",
@@ -18,10 +18,12 @@ def build_team_view(df):
         "home_shots_ot": "sot",
         "away_shots_ot": "sot_against",
         "home_corners": "corners_given",
-        "away_corners": "corners_conceded"
+        "away_corners": "corners_conceded",
+        "home_xg": "xg",
+        "away_xg": "xg_against",
     })
 
-    away_view = df[["date", "away_team", "away_goals", "home_goals", "away_shots", "home_shots", "away_shots_ot", "home_shots_ot", "away_corners", "home_corners", "result"]].rename(columns={
+    away_view = df[["date", "away_team", "away_goals", "home_goals", "away_shots", "home_shots", "away_shots_ot", "home_shots_ot", "away_corners", "home_corners", "away_xg", "home_xg", "result"]].rename(columns={
         "away_team": "team",
         "away_goals": "gs",
         "home_goals": "gc",
@@ -30,7 +32,9 @@ def build_team_view(df):
         "away_shots_ot": "sot",
         "home_shots_ot": "sot_against",
         "away_corners": "corners_given",
-        "home_corners": "corners_conceded"
+        "home_corners": "corners_conceded",
+        "away_xg": "xg",
+        "home_xg": "xg_against",
     })
 
     home_view["venue"] = "home"
@@ -66,6 +70,10 @@ def build_rolling_stats(df):
     df["avg_corners"] = df.groupby("team")["corners_given"].transform(lambda x: x.shift(1).rolling(5).mean())
     df["avg_corners_against"] = df.groupby("team")["corners_conceded"].transform(lambda x: x.shift(1).rolling(5).mean())
 
+    # xG
+    df["avg_xg"] = df.groupby("team")["xg"].transform(lambda x: x.shift(1).rolling(5).mean())
+    df["avg_xg_against"] = df.groupby("team")["xg_against"].transform(lambda x: x.shift(1).rolling(5).mean())
+
     # form (3-game, 5-game, 10-game windows)
     df["form_3"] = df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(3).sum())
     df["overall_form"] = df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(5).sum())
@@ -88,7 +96,7 @@ def build_rolling_stats(df):
 
 # feature functions -> df for the model
 def build_features(df):
-    stat_cols = ["date", "team", "avg_gs", "avg_gc", "form_3", "overall_form", "form_10", "avg_sot", "avg_sot_against", "avg_corners", "avg_corners_against", "draw_rate", "home_form", "away_form"]
+    stat_cols = ["date", "team", "avg_gs", "avg_gc", "form_3", "overall_form", "form_10", "avg_sot", "avg_sot_against", "avg_corners", "avg_corners_against", "avg_xg", "avg_xg_against", "draw_rate", "home_form", "away_form"]
     df_tomerge = build_rolling_stats(build_team_view(df))[stat_cols]
 
     df = df.merge(df_tomerge, left_on=["date", "home_team"], right_on=["date", "team"]).rename(columns={
@@ -102,6 +110,8 @@ def build_features(df):
         "draw_rate": "ht_draw_rate",
         "avg_corners": "ht_avg_corners",
         "avg_corners_against": "ht_avg_corners_against",
+        "avg_xg": "ht_avg_xg",
+        "avg_xg_against": "ht_avg_xg_against",
         "home_form": "ht_home_form",
         "away_form": "ht_away_form"
     }).drop(columns=["team"])
@@ -117,6 +127,8 @@ def build_features(df):
         "draw_rate": "at_draw_rate",
         "avg_corners": "at_avg_corners",
         "avg_corners_against": "at_avg_corners_against",
+        "avg_xg": "at_avg_xg",
+        "avg_xg_against": "at_avg_xg_against",
         "home_form": "at_home_form",
         "away_form": "at_away_form"
     }).drop(columns=["team"])

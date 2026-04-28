@@ -18,6 +18,8 @@ FEATURE_COLS = [
     "ht_draw_rate", "at_draw_rate",
     "ht_avg_corners", "ht_avg_corners_against",
     "at_avg_corners", "at_avg_corners_against",
+    "ht_avg_xg", "ht_avg_xg_against",
+    "at_avg_xg", "at_avg_xg_against",
 ]
 
 TARGET = "result"

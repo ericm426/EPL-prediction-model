@@ -16,7 +16,9 @@ dependencies = [
     "requests",
     "python-dotenv",
     "xgboost",
-    "scipy"
+    "scipy",
+    "beautifulsoup4",
+    "curl_cffi",
 ]
 
 [project.optional-dependencies]
