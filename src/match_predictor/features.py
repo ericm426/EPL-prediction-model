@@ -66,8 +66,10 @@ def build_rolling_stats(df):
     df["avg_corners"] = df.groupby("team")["corners_given"].transform(lambda x: x.shift(1).rolling(5).mean())
     df["avg_corners_against"] = df.groupby("team")["corners_conceded"].transform(lambda x: x.shift(1).rolling(5).mean())
 
-    # form
+    # form (3-game, 5-game, 10-game windows)
+    df["form_3"] = df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(3).sum())
     df["overall_form"] = df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(5).sum())
+    df["form_10"] = df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(10).sum())
 
     home_df = df[df["venue"] == "home"].copy()
     home_df["home_form"] = home_df.groupby("team")["points"].transform(lambda x: x.shift(1).rolling(5).sum())
@@ -86,13 +88,15 @@ def build_rolling_stats(df):
 
 # feature functions -> df for the model
 def build_features(df):
-    stat_cols = ["date", "team", "avg_gs", "avg_gc", "overall_form", "avg_sot", "avg_sot_against", "avg_corners", "avg_corners_against", "draw_rate", "home_form", "away_form"]
+    stat_cols = ["date", "team", "avg_gs", "avg_gc", "form_3", "overall_form", "form_10", "avg_sot", "avg_sot_against", "avg_corners", "avg_corners_against", "draw_rate", "home_form", "away_form"]
     df_tomerge = build_rolling_stats(build_team_view(df))[stat_cols]
 
     df = df.merge(df_tomerge, left_on=["date", "home_team"], right_on=["date", "team"]).rename(columns={
         "avg_gs": "ht_avg_gs",
         "avg_gc": "ht_avg_gc",
+        "form_3": "ht_form_3",
         "overall_form": "ht_overall_form",
+        "form_10": "ht_form_10",
         "avg_sot": "ht_avg_sot",
         "avg_sot_against": "ht_avg_sot_against",
         "draw_rate": "ht_draw_rate",
@@ -105,7 +109,9 @@ def build_features(df):
     df = df.merge(df_tomerge, left_on=["date", "away_team"], right_on=["date", "team"]).rename(columns={
         "avg_gs": "at_avg_gs",
         "avg_gc": "at_avg_gc",
+        "form_3": "at_form_3",
         "overall_form": "at_overall_form",
+        "form_10": "at_form_10",
         "avg_sot": "at_avg_sot",
         "avg_sot_against": "at_avg_sot_against",
         "draw_rate": "at_draw_rate",

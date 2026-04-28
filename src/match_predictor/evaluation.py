@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 
@@ -14,3 +15,4 @@ def evaluate(model_name, y_true, y_pred, le):
     print(f"Confusion matrix:\n{cm_df}\n")
 
     return acc
+

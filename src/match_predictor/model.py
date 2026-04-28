@@ -8,9 +8,11 @@ from match_predictor.evaluation import evaluate
 FEATURE_COLS = [
     "ht_avg_gs", "at_avg_gs",
     "ht_avg_gc", "at_avg_gc",
+    "ht_form_3", "at_form_3",
+    "ht_overall_form", "at_overall_form",
+    "ht_form_10", "at_form_10",
     "ht_home_form", "ht_away_form",
-    "ht_overall_form", "at_away_form",
-    "at_overall_form", "at_home_form",
+    "at_home_form", "at_away_form",
     "ht_avg_sot", "ht_avg_sot_against",
     "at_avg_sot", "at_avg_sot_against",
     "ht_draw_rate", "at_draw_rate",
@@ -44,7 +46,8 @@ def train(df):
 
     xgb.fit(x_train, y_train, sample_weight=weights)
 
-    xgb_pred = xgb.predict(x_test)
+    xgb_proba = xgb.predict_proba(x_test)
+    xgb_pred = xgb_proba.argmax(axis=1)
 
     evaluate("XGBoost", y_test, xgb_pred, le)
 
