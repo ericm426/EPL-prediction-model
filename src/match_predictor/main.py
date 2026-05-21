@@ -28,6 +28,25 @@ def tune_elo(data):
     print(f"\nBest: k={best_k}, home_adv={best_ha}, accuracy={best_acc:.4f}")
 
 
+def tune_xgb(data):
+    depth_values = [2, 3, 4]
+    mcw_values = [1, 5, 10, 20]
+
+    print(f"{'depth':>6} {'mcw':>5} {'Accuracy':>10}")
+    print("-" * 25)
+    best_acc, best_depth, best_mcw = 0, None, None
+
+    for depth in depth_values:
+        for mcw in mcw_values:
+            with contextlib.redirect_stdout(io.StringIO()):
+                _, acc = train(data, max_depth=depth, min_child_weight=mcw)
+            print(f"{depth:>6} {mcw:>5} {acc:>10.4f}")
+            if acc > best_acc:
+                best_acc, best_depth, best_mcw = acc, depth, mcw
+
+    print(f"\nBest: max_depth={best_depth}, min_child_weight={best_mcw}, accuracy={best_acc:.4f}")
+
+
 def main():
     data = load_data()
     xgboost, acc = train(data)

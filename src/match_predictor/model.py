@@ -26,7 +26,7 @@ FEATURE_COLS = [
 TARGET = "result"
 
 
-def train(df, elo_k=35, elo_home_adv=125):
+def train(df, elo_k=35, elo_home_adv=125, max_depth=3, min_child_weight=1):
     le = LabelEncoder()
     features_df = build_features(df, elo_k=elo_k, elo_home_adv=elo_home_adv).sort_values(by='date')
 
@@ -45,7 +45,7 @@ def train(df, elo_k=35, elo_home_adv=125):
     y_test = le.transform(test_df[TARGET])
 
     weights = compute_sample_weight(class_weight='balanced', y=y_train)
-    xgb = XGBClassifier(n_estimators=500, max_depth=3, learning_rate=0.01, subsample=0.8, colsample_bytree=0.8, random_state=1)
+    xgb = XGBClassifier(n_estimators=500, max_depth=max_depth, learning_rate=0.01, subsample=0.8, colsample_bytree=0.8, random_state=1, min_child_weight=min_child_weight)
 
     xgb.fit(x_train, y_train, sample_weight=weights)
 
