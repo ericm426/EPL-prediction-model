@@ -22,15 +22,17 @@ python -m match_predictor.main  # train and evaluate
 - Rest days since each team's last match
 - Season context: points-per-game and league table position entering the match
 
-## Model
+## Models
 
-XGBoost classifier, 3-way output (home win / draw / away win), trained with balanced class weights. Outputs win/draw/loss probabilities per match via `predict_proba` (uncalibrated).
+**XGBoost classifier** — 3-way output (home win / draw / away win), trained with balanced class weights. Outputs win/draw/loss probabilities per match via `predict_proba`. Platt scaling calibration is implemented but disabled by default (collapses minority classes at current dataset size).
+
+**Dixon-Coles Poisson model** — time-weighted attack/defense ratings per team fitted on the last 3 seasons via MLE. Outputs a full scoreline probability matrix and ranked probability score (RPS). Home advantage and low-score correction (rho) are jointly fitted.
 
 ## Evaluation
 
-Two evaluation modes:
+- **XGBoost hold-out** (70/20 split, 10% calibration holdout): ~49-52% accuracy
+- **XGBoost walk-forward CV** (5 expanding folds): ~50.3% mean (±1.1%) — the honest estimate
+- **Dixon-Coles in-sample** (last 3 seasons): ~55% accuracy, RPS ≈ 0.19
+- **Baseline** (always predict home win): ~43%
 
-- **Hold-out**: 80/20 chronological split — ~50-52% accuracy depending on the window
-- **Walk-forward CV**: 5 expanding-window folds in chronological order — ~50.3% mean accuracy, which is the more honest estimate (majority-class baseline is ~43%)
-
-Log loss is reported alongside accuracy to track probability quality, not just argmax predictions.
+Brier score and log loss are reported alongside accuracy to track probability quality.
