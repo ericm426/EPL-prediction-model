@@ -162,9 +162,20 @@ def compute_elo(df, k=35, home_advantage=125, initial=1500):
     return df
 
 
+def add_market_probs(df):
+    # bookmaker odds -> implied probabilities, normalised to strip the overround
+    inv = 1 / df[["odds_home", "odds_draw", "odds_away"]]
+    total = inv.sum(axis=1, min_count=3)
+    df["mkt_p_home"] = inv["odds_home"] / total
+    df["mkt_p_draw"] = inv["odds_draw"] / total
+    df["mkt_p_away"] = inv["odds_away"] / total
+    return df
+
+
 # feature functions -> df for the model
 def build_features(df, elo_k=35, elo_home_adv=125):
     df = compute_elo(df, k=elo_k, home_advantage=elo_home_adv)
+    df = add_market_probs(df)
 
     stat_cols = ["date", "team", "avg_gs", "avg_gc", "form_3", "overall_form", "form_10", "avg_sot", "avg_sot_against", "avg_corners", "avg_corners_against", "avg_xg", "avg_xg_against", "draw_rate", "home_form", "away_form", "xg_overperf", "rest_days", "season_ppg", "league_pos"]
     df_tomerge = build_rolling_stats(build_team_view(df))[stat_cols]

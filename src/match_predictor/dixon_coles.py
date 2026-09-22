@@ -1,7 +1,10 @@
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
+from scipy.special import gammaln
 from scipy.stats import poisson as poisson_dist
+
+from match_predictor.evaluation import RESULT_ORDER, rps
 
 
 class DixonColesModel:
@@ -44,7 +47,14 @@ class DixonColesModel:
         hg = df["home_goals"].values
         ag = df["away_goals"].values
 
-        def neg_ll(params):
+        is_00 = (hg == 0) & (ag == 0)
+        is_10 = (hg == 1) & (ag == 0)
+        is_01 = (hg == 0) & (ag == 1)
+        is_11 = (hg == 1) & (ag == 1)
+        # log(hg!) + log(ag!) is constant in the parameters
+        log_fact = gammaln(hg + 1) + gammaln(ag + 1)
+
+        def neg_ll_and_grad(params):
             # log-parameterize attack/defense/home_adv for positivity
             log_att = np.zeros(n)
             log_att[1:] = params[: n - 1]
@@ -52,25 +62,47 @@ class DixonColesModel:
             log_ha = params[2 * n - 1]
             rho = params[2 * n]
 
-            att = np.exp(log_att)
-            defe = np.exp(log_def)
-            ha = np.exp(log_ha)
+            lam_h = np.exp(log_att[hi] + log_def[ai] + log_ha)
+            lam_a = np.exp(log_att[ai] + log_def[hi])
 
-            lam_h = att[hi] * defe[ai] * ha
-            lam_a = att[ai] * defe[hi]
+            log_p = hg * np.log(lam_h) - lam_h + ag * np.log(lam_a) - lam_a - log_fact
 
-            log_p = poisson_dist.logpmf(hg, lam_h) + poisson_dist.logpmf(ag, lam_a)
+            # Dixon-Coles correction for 0-0, 1-0, 0-1, 1-1, with its partial
+            # derivatives w.r.t. log(lam_h), log(lam_a) and rho
+            tau_raw = np.ones(len(hg))
+            tau_raw[is_00] = 1 - lam_h[is_00] * lam_a[is_00] * rho
+            tau_raw[is_10] = 1 + lam_a[is_10] * rho
+            tau_raw[is_01] = 1 + lam_h[is_01] * rho
+            tau_raw[is_11] = 1 - rho
+            tau = np.clip(tau_raw, 1e-10, None)
 
-            # Dixon-Coles correction for 0-0, 1-0, 0-1, 1-1
-            tau = np.ones(len(df))
-            tau[(hg == 0) & (ag == 0)] = np.clip(
-                1 - lam_h[(hg == 0) & (ag == 0)] * lam_a[(hg == 0) & (ag == 0)] * rho, 1e-10, None
-            )
-            tau[(hg == 1) & (ag == 0)] = np.clip(1 + lam_a[(hg == 1) & (ag == 0)] * rho, 1e-10, None)
-            tau[(hg == 0) & (ag == 1)] = np.clip(1 + lam_h[(hg == 0) & (ag == 1)] * rho, 1e-10, None)
-            tau[(hg == 1) & (ag == 1)] = np.clip(1 - rho, 1e-10, None)
+            dtau_h = np.zeros(len(hg))
+            dtau_a = np.zeros(len(hg))
+            dtau_rho = np.zeros(len(hg))
+            dtau_h[is_00] = dtau_a[is_00] = -lam_h[is_00] * lam_a[is_00] * rho
+            dtau_rho[is_00] = -lam_h[is_00] * lam_a[is_00]
+            dtau_a[is_10] = lam_a[is_10] * rho
+            dtau_rho[is_10] = lam_a[is_10]
+            dtau_h[is_01] = lam_h[is_01] * rho
+            dtau_rho[is_01] = lam_h[is_01]
+            dtau_rho[is_11] = -1.0
+            # clipped rows are flat
+            live = (tau_raw > 1e-10) / tau
+            dtau_h *= live
+            dtau_a *= live
+            dtau_rho *= live
 
-            return -(weights * (log_p + np.log(tau))).sum()
+            g_h = weights * (hg - lam_h + dtau_h)   # d loglik / d log(lam_h)
+            g_a = weights * (ag - lam_a + dtau_a)   # d loglik / d log(lam_a)
+
+            grad_att = np.bincount(hi, g_h, n) + np.bincount(ai, g_a, n)
+            grad_def = np.bincount(ai, g_h, n) + np.bincount(hi, g_a, n)
+            grad = np.concatenate([
+                grad_att[1:], grad_def, [g_h.sum()], [(weights * dtau_rho).sum()],
+            ])
+
+            nll = -(weights * (log_p + np.log(tau))).sum()
+            return nll, -grad
 
         x0 = np.zeros(2 * n + 1)
         x0[2 * n - 1] = np.log(1.3)  # start: home adv ~1.3x
@@ -82,7 +114,7 @@ class DixonColesModel:
             + [(-1.0, 1.0)]                # rho
         )
 
-        result = minimize(neg_ll, x0, method="L-BFGS-B", bounds=bounds,
+        result = minimize(neg_ll_and_grad, x0, jac=True, method="L-BFGS-B", bounds=bounds,
                           options={"maxiter": 1000, "ftol": 1e-10})
 
         params = result.x
@@ -160,7 +192,7 @@ class DixonColesModel:
           - accuracy of most-likely result vs actual
           - ranked probability score (RPS) — lower is better
         """
-        order = ["HOME_TEAM", "DRAW", "AWAY_TEAM"]
+        order = RESULT_ORDER
         rows = []
         for _, r in df.iterrows():
             if r["home_team"] not in self.attack or r["away_team"] not in self.attack:
@@ -182,13 +214,69 @@ class DixonColesModel:
         # ranked probability score
         actual_enc = pd.get_dummies(results["actual"]).reindex(columns=order, fill_value=0)
         pred_probs = results[["p_home", "p_draw", "p_away"]].values
-        rps = _rps(actual_enc.values, pred_probs)
+        score = rps(actual_enc.values, pred_probs)
 
-        return acc, rps, results
+        return acc, score, results
+
+    def set_rating(self, team, attack, defense):
+        self.attack[team] = attack
+        self.defense[team] = defense
 
 
-def _rps(y_onehot, probs):
-    """Mean ranked probability score (multiclass), lower = better."""
-    cum_prob = np.cumsum(probs, axis=1)
-    cum_actual = np.cumsum(y_onehot, axis=1)
-    return float(np.mean(np.sum((cum_prob - cum_actual) ** 2, axis=1) / (probs.shape[1] - 1)))
+def backtest(df, start_date, xi=0.0065, window_days=1095, refit_days=7,
+             min_matches=5, max_goals=8):
+    """
+    Out-of-sample walk-forward evaluation. Every `refit_days` the model is
+    refitted on matches strictly before that date (within `window_days`) and
+    used to predict the next block. Teams with fewer than `min_matches` in the
+    window (i.e. newly promoted sides) get a promoted-team rating: the average
+    of the three weakest sides in the fitted model.
+
+    Returns a DataFrame (same index as df, rows from start_date on) with
+    p_home, p_draw, p_away and the actual result.
+    """
+    df = df.dropna(subset=["home_goals", "away_goals"]).sort_values("date")
+    start_date = pd.Timestamp(start_date)
+    end_date = df["date"].max()
+
+    frames = []
+    block_start = start_date
+    while block_start <= end_date:
+        block_end = block_start + pd.Timedelta(days=refit_days)
+        block = df[(df["date"] >= block_start) & (df["date"] < block_end)]
+        block_start, window_start = block_end, block_start - pd.Timedelta(days=window_days)
+        if block.empty:
+            continue
+
+        train = df[(df["date"] < block["date"].min()) & (df["date"] >= window_start)]
+        model = DixonColesModel(xi=xi).fit(train)
+        _fill_sparse_teams(model, train, block, min_matches)
+
+        probs = [model.predict_result(h, a, max_goals)
+                 for h, a in zip(block["home_team"], block["away_team"])]
+        frames.append(pd.DataFrame({
+            "date":      block["date"],
+            "home_team": block["home_team"],
+            "away_team": block["away_team"],
+            "result":    block["result"],
+            "p_home":    [p["HOME_TEAM"] for p in probs],
+            "p_draw":    [p["DRAW"] for p in probs],
+            "p_away":    [p["AWAY_TEAM"] for p in probs],
+        }, index=block.index))
+
+    return pd.concat(frames)
+
+
+def _fill_sparse_teams(model, train, upcoming, min_matches):
+    counts = pd.concat([train["home_team"], train["away_team"]]).value_counts()
+    established = [t for t in model.teams if counts.get(t, 0) >= min_matches]
+
+    # weakest = lowest attack / defense ratio (defense is goals-conceded multiplier)
+    strength = sorted(established, key=lambda t: model.attack[t] / model.defense[t])
+    weakest = strength[:3]
+    prom_att = float(np.mean([model.attack[t] for t in weakest]))
+    prom_def = float(np.mean([model.defense[t] for t in weakest]))
+
+    for team in set(upcoming["home_team"]) | set(upcoming["away_team"]):
+        if counts.get(team, 0) < min_matches:
+            model.set_rating(team, prom_att, prom_def)

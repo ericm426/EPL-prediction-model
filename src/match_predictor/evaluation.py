@@ -10,6 +10,34 @@ def brier_score(y_true, y_proba):
     return float(np.mean(np.sum((y_proba - y_onehot) ** 2, axis=1)))
 
 
+def rps(y_onehot, probs):
+    """Mean ranked probability score (multiclass), lower = better. Classes must be in outcome order."""
+    cum_prob = np.cumsum(probs, axis=1)
+    cum_actual = np.cumsum(y_onehot, axis=1)
+    return float(np.mean(np.sum((cum_prob - cum_actual) ** 2, axis=1) / (probs.shape[1] - 1)))
+
+
+RESULT_ORDER = ["HOME_TEAM", "DRAW", "AWAY_TEAM"]
+
+
+def score_probs(results, probs):
+    """
+    Scores H/D/A probabilities against actual results.
+    results: array-like of 'HOME_TEAM'/'DRAW'/'AWAY_TEAM'
+    probs:   (n, 3) array with columns in RESULT_ORDER
+    """
+    probs = np.asarray(probs, dtype=float)
+    probs = probs / probs.sum(axis=1, keepdims=True)
+    y_true = pd.Series(results).map({r: i for i, r in enumerate(RESULT_ORDER)}).values
+    y_onehot = np.eye(3)[y_true]
+    return {
+        "accuracy": float((probs.argmax(axis=1) == y_true).mean()),
+        "log_loss": float(log_loss(y_true, probs, labels=range(3))),
+        "brier":    brier_score(y_true, probs),
+        "rps":      rps(y_onehot, probs),
+    }
+
+
 def evaluate(model_name, y_true, y_pred, le, y_proba=None):
     class_names = le.classes_
     acc = accuracy_score(y_true, y_pred)

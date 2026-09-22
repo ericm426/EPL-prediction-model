@@ -24,11 +24,20 @@ at current dataset size. With ~400 calibration samples the logistic regression
 meta-learner collapses draw predictions. Calibration needs either more data or
 a different approach (temperature scaling). Keeping calibrate=False as default.
 
+- [x] Dixon-Coles rolling backtest — refit weekly on past matches only;
+out-of-sample accuracy 53.9% (in-sample was 55.2%). Per-season table in main.
+
+- [x] Bookmaker odds as features + market baseline — odds now filled for
+2015-2019 too (BbAv* columns). Market alone gets 55.7%, beating both models.
+
+- [x] Dropped balanced class weights by default — +2.6 pts walk-forward
+accuracy and better log loss, at the cost of almost never predicting draws.
+
+- beat the market: model the residual vs bookmaker probabilities rather than
+  the raw result (stats features add little on top of the odds right now)
+
 - create frontend (Streamlit app — two team inputs, outputs XGBoost probs +
   D-C scorelines side by side)
-
-- Dixon-Coles rolling backtest — fit on expanding window and evaluate D-C
-  accuracy per season to get an unbiased accuracy estimate
 
 - probability calibration with more data (temperature scaling on full dataset,
   or wait until more seasons accumulate)
