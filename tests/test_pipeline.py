@@ -6,7 +6,7 @@ import pytest
 
 from match_predictor.dixon_coles import DixonColesModel, backtest
 from match_predictor.evaluation import rps, score_probs
-from match_predictor.features import build_features, add_market_probs
+from match_predictor.features import build_features, add_market_probs, compute_elo, start_new_season
 from match_predictor.model import FEATURE_COLS
 
 DATA_PATH = Path(__file__).resolve().parents[1] / "data" / "processed" / "pl_matches_all.csv"
@@ -95,3 +95,30 @@ def test_rps_and_scores():
     scores = score_probs(["HOME_TEAM", "DRAW", "AWAY_TEAM"],
                          [[0.6, 0.3, 0.1], [0.2, 0.5, 0.3], [0.1, 0.2, 0.7]])
     assert scores["accuracy"] == 1.0
+
+
+def test_promoted_teams_start_at_relegated_average():
+    ratings = {"Top": 1650.0, "Mid": 1500.0, "Down1": 1400.0, "Down2": 1380.0, "Stale": 1200.0}
+    start_new_season(ratings, prev_teams={"Top", "Mid", "Down1", "Down2"},
+                     new_teams={"Top", "Mid", "Up1", "Stale"},
+                     seed_promoted=True, season_reversion=0.0)
+    # brand-new and returning sides both get the relegated average, not 1500 or a stale rating
+    assert ratings["Up1"] == ratings["Stale"] == 1390.0
+    assert ratings["Top"] == 1650.0
+
+
+def test_season_reversion_pulls_toward_league_mean():
+    ratings = {"A": 1600.0, "B": 1400.0}
+    start_new_season(ratings, {"A", "B"}, {"A", "B"}, seed_promoted=True, season_reversion=0.5)
+    assert ratings == {"A": 1550.0, "B": 1450.0}
+
+
+def test_real_promoted_sides_share_one_low_seed(data):
+    elo = compute_elo(data)
+    first = elo[elo["season"] == "2024-2025"]
+    starts = {}
+    for _, r in first.iterrows():
+        starts.setdefault(r["home_team"], r["ht_elo"])
+        starts.setdefault(r["away_team"], r["at_elo"])
+    seeds = {round(starts[t], 6) for t in ("Ipswich", "Leicester", "Southampton")}
+    assert len(seeds) == 1 and seeds.pop() < 1450

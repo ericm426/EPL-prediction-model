@@ -127,13 +127,22 @@ def compute_league_positions(df):
     positions = pd.concat(pos_frames)
     return df.merge(positions, on=["date", "team", "season"], how="left").drop(columns=["cum_points"])
 
-def compute_elo(df, k=35, home_advantage=125, initial=1500):
+def compute_elo(df, k=35, home_advantage=125, initial=1500,
+                seed_promoted=True, season_reversion=0.0):
     # pre-match ratings are recorded before updating, so there's no data leakage
     df = df.sort_values("date").reset_index(drop=True)
+    season_teams = {s: set(g["home_team"]) | set(g["away_team"]) for s, g in df.groupby("season")}
     ratings = {}
     ht_elo, at_elo = [], []
+    season = None
 
     for _, row in df.iterrows():
+        if row["season"] != season:
+            if season is not None:
+                start_new_season(ratings, season_teams[season], season_teams[row["season"]],
+                                 seed_promoted, season_reversion)
+            season = row["season"]
+
         ht, at = row["home_team"], row["away_team"]
         r_h = ratings.get(ht, initial)
         r_a = ratings.get(at, initial)
@@ -162,6 +171,26 @@ def compute_elo(df, k=35, home_advantage=125, initial=1500):
     return df
 
 
+def start_new_season(ratings, prev_teams, new_teams, seed_promoted, season_reversion):
+    relegated = prev_teams - new_teams
+    promoted = new_teams - prev_teams
+
+    # promoted sides start at the relegated sides' end-of-season average, not
+    # at league average or a rating left over from years ago
+    if seed_promoted and relegated:
+        seed = np.mean([ratings[t] for t in relegated])
+        for team in promoted:
+            ratings[team] = seed
+
+    # pull the new league's ratings part-way back to its mean (transfers,
+    # managers and luck change over the summer)
+    if season_reversion:
+        current = [t for t in new_teams if t in ratings]
+        mean = np.mean([ratings[t] for t in current])
+        for team in current:
+            ratings[team] += season_reversion * (mean - ratings[team])
+
+
 def add_market_probs(df):
     # bookmaker odds -> implied probabilities, normalised to strip the overround
     inv = 1 / df[["odds_home", "odds_draw", "odds_away"]]
@@ -173,8 +202,8 @@ def add_market_probs(df):
 
 
 # feature functions -> df for the model
-def build_features(df, elo_k=35, elo_home_adv=125):
-    df = compute_elo(df, k=elo_k, home_advantage=elo_home_adv)
+def build_features(df, elo_k=35, elo_home_adv=125, **elo_kwargs):
+    df = compute_elo(df, k=elo_k, home_advantage=elo_home_adv, **elo_kwargs)
     df = add_market_probs(df)
 
     stat_cols = ["date", "team", "avg_gs", "avg_gc", "form_3", "overall_form", "form_10", "avg_sot", "avg_sot_against", "avg_corners", "avg_corners_against", "avg_xg", "avg_xg_against", "draw_rate", "home_form", "away_form", "xg_overperf", "rest_days", "season_ppg", "league_pos"]

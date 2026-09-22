@@ -19,7 +19,7 @@ pytest                          # leakage + sanity tests
 - Rolling 5-game averages: goals scored/conceded, shots on target, corners, xG
 - Form over 3, 5, and 10 game windows; split by home/away venue
 - Draw rate (last 10 games)
-- Elo ratings (updated pre-match to avoid leakage)
+- Elo ratings (updated pre-match to avoid leakage); promoted sides start at the relegated sides' average rating
 - xG over/underperformance (rolling goals minus xG)
 - Rest days since each team's last match
 - Season context: points-per-game and league table position entering the match
@@ -38,8 +38,8 @@ All models scored on the same 3,393 out-of-sample matches (Apr 2017 – Feb 2026
 | Model | Accuracy | Log loss | Brier | RPS |
 |---|---|---|---|---|
 | Base rates (always the historical H/D/A mix) | 44.2% | 1.069 | 0.647 | 0.234 |
-| XGBoost (stats) | 52.9% | 0.994 | 0.591 | 0.206 |
-| XGBoost (stats + market odds) | 53.8% | 0.975 | 0.578 | 0.200 |
+| XGBoost (stats) | 52.8% | 0.990 | 0.589 | 0.205 |
+| XGBoost (stats + market odds) | 53.5% | 0.974 | 0.578 | 0.200 |
 | Dixon-Coles (weekly refit backtest) | 53.9% | 0.977 | 0.579 | 0.201 |
 | Bookmaker market average | **55.7%** | **0.951** | **0.563** | **0.194** |
 

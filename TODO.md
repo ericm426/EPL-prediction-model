@@ -33,6 +33,17 @@ out-of-sample accuracy 53.9% (in-sample was 55.2%). Per-season table in main.
 - [x] Dropped balanced class weights by default — +2.6 pts walk-forward
 accuracy and better log loss, at the cost of almost never predicting draws.
 
+- [x] Elo seeding for promoted teams — previously 14/30 promoted sides started
+at 1500 (league average) and the rest carried ratings from years earlier.
+Seeding at the relegated sides' average cut stats-model log loss 0.9941 ->
+0.9898 (bootstrap 95% CI excludes zero) and RPS on promoted teams' first 10
+games 0.194 -> 0.189. Between-season reversion tested (0.2-0.5) and did not
+help; available as season_reversion.
+
+- Championship data (football-data E1 files): fit Dixon-Coles over both
+  leagues with a league-strength parameter so promoted teams arrive with a
+  real rating; carry Championship form into features (no understat xG there)
+
 - beat the market: model the residual vs bookmaker probabilities rather than
   the raw result (stats features add little on top of the odds right now)
 
