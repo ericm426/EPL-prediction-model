@@ -31,6 +31,9 @@ FEATURE_COLS = [
     "position_gap",
 ]
 
+# bookmaker-implied probabilities (overround removed)
+MARKET_COLS = ["mkt_p_home", "mkt_p_draw", "mkt_p_away"]
+
 TARGET = "result"
 
 
@@ -67,7 +70,9 @@ def make_model(max_depth=3, min_child_weight=1):
     )
 
 
-def train(df, elo_k=35, elo_home_adv=125, max_depth=3, min_child_weight=1, calibrate=False):
+def train(df, elo_k=35, elo_home_adv=125, max_depth=3, min_child_weight=1, calibrate=False,
+          feature_cols=None, balanced=False):
+    feature_cols = feature_cols or FEATURE_COLS
     le = LabelEncoder()
     features_df = build_features(df, elo_k=elo_k, elo_home_adv=elo_home_adv).sort_values(by="date")
 
@@ -80,15 +85,16 @@ def train(df, elo_k=35, elo_home_adv=125, max_depth=3, min_child_weight=1, calib
     cal_df   = features_df.iloc[train_end:cal_end].copy()
     test_df  = features_df.iloc[cal_end:].copy()
 
-    col_medians = train_df[FEATURE_COLS].median()
+    col_medians = train_df[feature_cols].median()
     for frame in (train_df, cal_df, test_df):
-        frame[FEATURE_COLS] = frame[FEATURE_COLS].fillna(col_medians)
+        frame[feature_cols] = frame[feature_cols].fillna(col_medians)
 
-    x_train, y_train = train_df[FEATURE_COLS], le.fit_transform(train_df[TARGET])
-    x_cal,   y_cal   = cal_df[FEATURE_COLS],   le.transform(cal_df[TARGET])
-    x_test,  y_test  = test_df[FEATURE_COLS],  le.transform(test_df[TARGET])
+    x_train, y_train = train_df[feature_cols], le.fit_transform(train_df[TARGET])
+    x_cal,   y_cal   = cal_df[feature_cols],   le.transform(cal_df[TARGET])
+    x_test,  y_test  = test_df[feature_cols],  le.transform(test_df[TARGET])
 
-    weights = compute_sample_weight(class_weight="balanced", y=y_train)
+    # balanced weights raise draw recall but cost accuracy and probability quality
+    weights = compute_sample_weight(class_weight="balanced", y=y_train) if balanced else None
     xgb = make_model(max_depth=max_depth, min_child_weight=min_child_weight)
     xgb.fit(x_train, y_train, sample_weight=weights)
 
@@ -118,7 +124,8 @@ def train(df, elo_k=35, elo_home_adv=125, max_depth=3, min_child_weight=1, calib
 
 
 def walk_forward_cv(df, n_splits=5, elo_k=35, elo_home_adv=125,
-                    max_depth=3, min_child_weight=1, feature_cols=None):
+                    max_depth=3, min_child_weight=1, feature_cols=None, balanced=False,
+                    label=None):
     # expanding-window evaluation — every fold respects chronological order
     feature_cols = feature_cols or FEATURE_COLS
     features_df = (
@@ -133,8 +140,8 @@ def walk_forward_cv(df, n_splits=5, elo_k=35, elo_home_adv=125,
     n = len(features_df)
     fold_size = n // (n_splits + 1)
 
-    accs, losses = [], []
-    print(f"\n--- Walk-forward CV ({n_splits} folds) ---")
+    accs, losses, oos = [], [], []
+    print(f"\n--- Walk-forward CV ({n_splits} folds){' | ' + label if label else ''} ---")
     print(f"{'fold':>4} {'train':>6} {'test':>5} {'accuracy':>9} {'log_loss':>9}")
 
     for i in range(1, n_splits + 1):
@@ -151,7 +158,7 @@ def walk_forward_cv(df, n_splits=5, elo_k=35, elo_home_adv=125,
         y_train = le.transform(train_df[TARGET])
         y_test  = le.transform(test_df[TARGET])
 
-        weights = compute_sample_weight(class_weight="balanced", y=y_train)
+        weights = compute_sample_weight(class_weight="balanced", y=y_train) if balanced else None
         xgb = make_model(max_depth=max_depth, min_child_weight=min_child_weight)
         xgb.fit(train_df[feature_cols], y_train, sample_weight=weights)
 
@@ -163,9 +170,16 @@ def walk_forward_cv(df, n_splits=5, elo_k=35, elo_home_adv=125,
         losses.append(loss)
         print(f"{i:>4} {len(train_df):>6} {len(test_df):>5} {acc:>9.4f} {loss:>9.4f}")
 
+        fold_out = test_df[["date", "home_team", "away_team", TARGET]].copy()
+        fold_out["fold"] = i
+        for col, label in (("p_home", "HOME_TEAM"), ("p_draw", "DRAW"), ("p_away", "AWAY_TEAM")):
+            fold_out[col] = proba[:, list(le.classes_).index(label)]
+        oos.append(fold_out)
+
     print(f"\nMean accuracy: {np.mean(accs):.4f} (+/- {np.std(accs):.4f})")
     print(f"Mean log loss: {np.mean(losses):.4f}")
-    return np.mean(accs), np.std(accs)
+    # out-of-sample predictions for every test match, for comparing models
+    return np.mean(accs), np.std(accs), pd.concat(oos)
 
 
 def predict(model, match_features):

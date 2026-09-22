@@ -50,6 +50,19 @@ def fetch_season(season):
     return rows
 
 
+def fill_off_by_one_day(merged, xg_df):
+    missing = merged["home_xg"].isna()
+    for shift in (1, -1):
+        if not missing.any():
+            break
+        shifted = xg_df.assign(date=xg_df["date"] - pd.Timedelta(days=shift))
+        lookup = merged.loc[missing, ["date", "home_team", "away_team"]].reset_index()
+        found = lookup.merge(shifted, on=["date", "home_team", "away_team"]).set_index("index")
+        merged.loc[found.index, ["home_xg", "away_xg"]] = found[["home_xg", "away_xg"]]
+        missing = merged["home_xg"].isna()
+    return merged
+
+
 def main():
     csv_path = Path(__file__).parent / "processed" / "pl_matches_all.csv"
     df = pd.read_csv(csv_path, parse_dates=["date"])
@@ -68,7 +81,12 @@ def main():
     xg_df["date"] = pd.to_datetime(xg_df["date"])
     df["date"] = pd.to_datetime(df["date"])
 
+    # drop xG from a previous run so the merge doesn't create _x/_y columns
+    df = df.drop(columns=["home_xg", "away_xg"], errors="ignore")
     merged = df.merge(xg_df, on=["date", "home_team", "away_team"], how="left")
+
+    # evening kickoffs can land on the next calendar day on understat
+    merged = fill_off_by_one_day(merged, xg_df)
 
     matched = merged["home_xg"].notna().sum()
     total = len(merged)

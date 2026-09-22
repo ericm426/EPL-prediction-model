@@ -1,15 +1,17 @@
 # Football Match Predictor
 
-A ML model built to predict results of English Premier League fixtures using data from past 5 seasons.
+A ML model built to predict results of English Premier League fixtures, trained on every match from 2015-16 to the current season (~4,000 matches).
 
-Data from https://www.football-data.co.uk/ and https://www.football-data.org/.
+Data from https://www.football-data.co.uk/ (results, match stats, bookmaker odds) and https://understat.com/ (xG).
 
 ## Pipeline
 
 ```
-python data/standardize.py   # combine raw season CSVs into pl_matches_all.csv
-python data/fetch_xg.py      # merge xG data from understat.com
-python -m match_predictor.main  # train and evaluate
+pip install -e ".[dev]"
+python data/standardize.py      # combine raw season CSVs into pl_matches_all.csv (keeps existing xG)
+python data/fetch_xg.py         # merge xG data from understat.com
+python -m match_predictor.main  # train and evaluate (runs from any directory)
+pytest                          # leakage + sanity tests
 ```
 
 ## Features
@@ -21,18 +23,24 @@ python -m match_predictor.main  # train and evaluate
 - xG over/underperformance (rolling goals minus xG)
 - Rest days since each team's last match
 - Season context: points-per-game and league table position entering the match
+- Optional: bookmaker-implied probabilities (market average odds, overround removed)
 
 ## Models
 
-**XGBoost classifier** — 3-way output (home win / draw / away win), trained with balanced class weights. Outputs win/draw/loss probabilities per match via `predict_proba`. Platt scaling calibration is implemented but disabled by default (collapses minority classes at current dataset size).
+**XGBoost classifier** — 3-way output (home win / draw / away win) via `predict_proba`. Trained unweighted by default: balanced class weights (`balanced=True`) raise draw recall but cost ~2.5 points of accuracy and worsen log loss/Brier/RPS. Platt scaling calibration is implemented but disabled by default (collapses minority classes at current dataset size).
 
-**Dixon-Coles Poisson model** — time-weighted attack/defense ratings per team fitted on the last 3 seasons via MLE. Outputs a full scoreline probability matrix and ranked probability score (RPS). Home advantage and low-score correction (rho) are jointly fitted.
+**Dixon-Coles Poisson model** — time-weighted attack/defense ratings per team fitted via MLE (analytic gradient, ~0.03s per fit). Outputs a full scoreline probability matrix. Home advantage and low-score correction (rho) are jointly fitted. `backtest()` refits weekly on past matches only and rates newly promoted teams as the average of the three weakest sides.
 
 ## Evaluation
 
-- **XGBoost hold-out** (70/20 split, 10% calibration holdout): ~49-52% accuracy
-- **XGBoost walk-forward CV** (5 expanding folds): ~50.3% mean (±1.1%) — the honest estimate
-- **Dixon-Coles in-sample** (last 3 seasons): ~55% accuracy, RPS ≈ 0.19
-- **Baseline** (always predict home win): ~43%
+All models scored on the same 3,393 out-of-sample matches (Apr 2017 – Feb 2026, the XGBoost walk-forward test folds):
 
-Brier score and log loss are reported alongside accuracy to track probability quality.
+| Model | Accuracy | Log loss | Brier | RPS |
+|---|---|---|---|---|
+| Base rates (always the historical H/D/A mix) | 44.2% | 1.069 | 0.647 | 0.234 |
+| XGBoost (stats) | 52.9% | 0.994 | 0.591 | 0.206 |
+| XGBoost (stats + market odds) | 53.8% | 0.975 | 0.578 | 0.200 |
+| Dixon-Coles (weekly refit backtest) | 53.9% | 0.977 | 0.579 | 0.201 |
+| Bookmaker market average | **55.7%** | **0.951** | **0.563** | **0.194** |
+
+The bookmaker market is still the benchmark to beat; neither model does yet. Dixon-Coles scored on its own training data reports ~55%, which is optimistic — the backtest is the honest number.
